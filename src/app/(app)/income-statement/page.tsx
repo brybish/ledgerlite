@@ -4,8 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { api, fmtUSD } from "@/lib/client";
 import { Card, Input, Button, Skeleton } from "@/components/ui";
 
-// Professional P&L. Date range drives the server-side computation; "Print"
-// uses the browser print dialog (window.print) for a printable/PDF layout.
+// Professional P&L. Date range drives the server-side computation. "Print"
+// uses the browser print dialog (window.print); "Download PDF" generates a
+// real PDF client-side (jsPDF) and downloads it directly, mirroring "Export CSV".
 export default function IncomeStatementPage() {
   const [start, setStart] = useState("2025-01-01");
   const [end, setEnd] = useState("2025-12-31");
@@ -28,6 +29,69 @@ export default function IncomeStatementPage() {
     a.click();
   }
 
+  // Same data and date range as the CSV export, rendered as a downloadable PDF.
+  // jsPDF is loaded lazily so it never weighs down the initial page bundle.
+  async function exportPdf() {
+    if (!d) return;
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    const left = 56, right = 556, lineH = 16, bottom = 740;
+    let y = 64;
+
+    const ensure = (need = lineH) => { if (y + need > bottom) { doc.addPage(); y = 64; } };
+    const row = (label: string, amount: number, opts: { bold?: boolean; size?: number } = {}) => {
+      ensure();
+      doc.setFont("helvetica", opts.bold ? "bold" : "normal").setFontSize(opts.size ?? 10).setTextColor(0);
+      doc.text(label, left, y);
+      doc.text(fmtUSD(amount), right, y, { align: "right" });
+      y += lineH;
+    };
+    const section = (title: string, lines: any[], total: number) => {
+      ensure(lineH * 2);
+      doc.setFont("helvetica", "bold").setFontSize(11).setTextColor(110);
+      doc.text(title.toUpperCase(), left, y);
+      y += lineH;
+      if (lines.length === 0) {
+        ensure();
+        doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(150);
+        doc.text("None", left, y);
+        y += lineH;
+      } else {
+        for (const l of lines) row(l.categoryName, l.amount);
+      }
+      y += 2;
+      doc.setDrawColor(200).line(left, y, right, y);
+      y += 12;
+      row(`Total ${title}`, total, { bold: true });
+      y += 8;
+    };
+
+    doc.setFont("helvetica", "bold").setFontSize(18).setTextColor(0);
+    doc.text("Income Statement", left, y);
+    y += 18;
+    doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(120);
+    doc.text(`Profit & Loss · ${start} to ${end}`, left, y);
+    y += 26;
+
+    section("Revenue", d.revenue, d.totalRevenue);
+    section("Expenses", d.expenses, d.totalExpenses);
+
+    ensure(lineH * 2);
+    doc.setDrawColor(110).setLineWidth(1.2).line(left, y, right, y);
+    doc.setLineWidth(1);
+    y += 14;
+    row("Net Income", d.netIncome, { bold: true, size: 12 });
+
+    if (d.uncategorizedCount > 0) {
+      y += 6;
+      ensure();
+      doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(180, 130, 0);
+      doc.text(`${d.uncategorizedCount} uncategorized transaction(s) are excluded.`, left, y);
+    }
+
+    doc.save("income-statement.pdf");
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3 print:hidden">
@@ -36,7 +100,8 @@ export default function IncomeStatementPage() {
           <div><label className="text-xs text-gray-500">From</label><Input type="date" value={start} onChange={(e: any) => setStart(e.target.value)} /></div>
           <div><label className="text-xs text-gray-500">To</label><Input type="date" value={end} onChange={(e: any) => setEnd(e.target.value)} /></div>
           <Button variant="outline" onClick={exportCsv}>Export CSV</Button>
-          <Button variant="outline" onClick={() => window.print()}>Print / PDF</Button>
+          <Button variant="outline" onClick={exportPdf} disabled={!d}>Download PDF</Button>
+          <Button variant="outline" onClick={() => window.print()}>Print</Button>
         </div>
       </div>
 
