@@ -47,13 +47,18 @@ on architecture, conventions, and what's done vs. pending. Read before editing.
 - Plaid: link-token / exchange / sync (dedup, cursor, retry) + Link widget on Settings
 - Transactions: filter/search/paginate, inline categorize, bulk categorize, splits
 - Assets & Liabilities: full CRUD (assets support straight-line depreciation fields)
-- Income Statement export: CSV + PDF (client-side jsPDF, respects the date range)
+- Statement export: CSV + client-side PDF (jsPDF) for BOTH the Income Statement
+  (respects the date range) and the Balance Sheet
+- Income Statement period controls: current-year default + Year/Month dropdowns
 - No-Plaid data entry: manual "Add transaction" form + CSV import (column mapping,
   sign convention, (date,amount,description) dedup, auto rule application)
+- Custom categories: Categories page to add chart-of-accounts entries (name + class)
+- AI categorize: /api/transactions/ai-classify suggests a category per uncategorized
+  txn (Claude via forced tool-use, prompt-cached; review/accept modal). Needs
+  ANTHROPIC_API_KEY; ANTHROPIC_MODEL defaults to claude-opus-4-7 (set to
+  claude-haiku-4-5 for ~5x lower cost — current prod setting)
 
 ## Status — PENDING / next steps
-- PDF export for the Balance Sheet (Income Statement PDF done; CSV export already
-  exists for both). Reuse the jsPDF pattern in income-statement/page.tsx.
 - Richer dashboard widgets; transaction notes/business-flag UI.
 - Plaid needs live keys in .env to run beyond the friendly "not configured" message.
   Sandbox test creds at the Plaid modal: user_good / pass_good.
