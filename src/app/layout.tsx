@@ -1,8 +1,20 @@
 import "./globals.css";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Providers } from "./providers";
 
-export const metadata: Metadata = { title: "LedgerLite", description: "Lightweight accounting platform" };
+export const metadata: Metadata = {
+  title: "LedgerLite",
+  description: "Lightweight accounting platform",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "LedgerLite", statusBarStyle: "default" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#2563eb",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
