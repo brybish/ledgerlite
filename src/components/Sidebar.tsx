@@ -9,6 +9,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/transactions", label: "Transactions" },
   { href: "/rules", label: "Rules" },
+  { href: "/categories", label: "Categories" },
   { href: "/income-statement", label: "Income Statement" },
   { href: "/balance-sheet", label: "Balance Sheet" },
   { href: "/assets", label: "Assets & Liabilities" },

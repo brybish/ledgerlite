@@ -6,6 +6,7 @@ import { Card, Input, Button, Select, Skeleton } from "@/components/ui";
 import { SplitEditor } from "@/components/SplitEditor";
 import { AddTransactionModal } from "@/components/AddTransactionModal";
 import { CsvImportModal } from "@/components/CsvImportModal";
+import { AiClassifyModal } from "@/components/AiClassifyModal";
 
 // Transaction management: server-side filter/sort/pagination via /transactions.
 // Supports single inline categorize, multi-select bulk categorize, and per-row
@@ -20,6 +21,7 @@ export default function TransactionsPage() {
   const [splitTxn, setSplitTxn] = useState<any | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showAi, setShowAi] = useState(false);
 
   const params = new URLSearchParams({ pageSize: "50", page: String(page), sort: "date", dir: "desc" });
   if (q) params.set("q", q);
@@ -78,6 +80,7 @@ export default function TransactionsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Transactions</h1>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowAi(true)}>AI categorize</Button>
           <Button variant="outline" onClick={() => setShowImport(true)}>Import CSV</Button>
           <Button onClick={() => setShowAdd(true)}>Add transaction</Button>
         </div>
@@ -175,6 +178,7 @@ export default function TransactionsPage() {
       {splitTxn && <SplitEditor txn={splitTxn} categories={categories} onClose={() => setSplitTxn(null)} />}
       {showAdd && <AddTransactionModal categories={categories} onClose={() => setShowAdd(false)} />}
       {showImport && <CsvImportModal onClose={() => setShowImport(false)} />}
+      {showAi && <AiClassifyModal categories={categories} onClose={() => setShowAi(false)} />}
     </div>
   );
 }

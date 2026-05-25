@@ -2,14 +2,37 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, fmtUSD } from "@/lib/client";
-import { Card, Input, Button, Skeleton } from "@/components/ui";
+import { Card, Input, Button, Select, Skeleton } from "@/components/ui";
 
 // Professional P&L. Date range drives the server-side computation. "Print"
 // uses the browser print dialog (window.print); "Download PDF" generates a
 // real PDF client-side (jsPDF) and downloads it directly, mirroring "Export CSV".
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
 export default function IncomeStatementPage() {
-  const [start, setStart] = useState("2025-01-01");
-  const [end, setEnd] = useState("2025-12-31");
+  const thisYear = new Date().getFullYear();
+  // Default to the current calendar year. The Year/Month dropdowns are quick
+  // shortcuts that set From/To; the date inputs remain editable for custom ranges.
+  const [start, setStart] = useState(`${thisYear}-01-01`);
+  const [end, setEnd] = useState(`${thisYear}-12-31`);
+  const [year, setYear] = useState(thisYear);
+  const [month, setMonth] = useState(0); // 0 = full year, 1–12 = that month
+  const years = [thisYear, thisYear - 1, thisYear - 2, thisYear - 3, thisYear - 4];
+
+  function applyPeriod(y: number, m: number) {
+    setYear(y);
+    setMonth(m);
+    if (m === 0) {
+      setStart(`${y}-01-01`);
+      setEnd(`${y}-12-31`);
+    } else {
+      const mm = String(m).padStart(2, "0");
+      const lastDay = new Date(y, m, 0).getDate(); // day 0 of next month = last day of m
+      setStart(`${y}-${mm}-01`);
+      setEnd(`${y}-${mm}-${String(lastDay).padStart(2, "0")}`);
+    }
+  }
+
   const q = useQuery({
     queryKey: ["is", start, end],
     queryFn: () => api<any>(`/reports/income-statement?start=${new Date(start).toISOString()}&end=${new Date(end + "T23:59:59").toISOString()}`),
@@ -96,7 +119,9 @@ export default function IncomeStatementPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3 print:hidden">
         <h1 className="text-2xl font-semibold">Income Statement</h1>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div><label className="text-xs text-gray-500">Year</label><Select value={year} onChange={(e: any) => applyPeriod(Number(e.target.value), month)}>{years.map((y) => <option key={y} value={y}>{y}</option>)}</Select></div>
+          <div><label className="text-xs text-gray-500">Month</label><Select value={month} onChange={(e: any) => applyPeriod(year, Number(e.target.value))}><option value={0}>Full year</option>{MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}</Select></div>
           <div><label className="text-xs text-gray-500">From</label><Input type="date" value={start} onChange={(e: any) => setStart(e.target.value)} /></div>
           <div><label className="text-xs text-gray-500">To</label><Input type="date" value={end} onChange={(e: any) => setEnd(e.target.value)} /></div>
           <Button variant="outline" onClick={exportCsv}>Export CSV</Button>
