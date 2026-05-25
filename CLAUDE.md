@@ -48,6 +48,8 @@ on architecture, conventions, and what's done vs. pending. Read before editing.
 - Transactions: filter/search/paginate, inline categorize, bulk categorize, splits
 - Assets & Liabilities: full CRUD (assets support straight-line depreciation fields)
 - Income Statement export: CSV + PDF (client-side jsPDF, respects the date range)
+- No-Plaid data entry: manual "Add transaction" form + CSV import (column mapping,
+  sign convention, (date,amount,description) dedup, auto rule application)
 
 ## Status — PENDING / next steps
 - PDF export for the Balance Sheet (Income Statement PDF done; CSV export already
