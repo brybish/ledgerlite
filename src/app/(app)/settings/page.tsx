@@ -17,7 +17,47 @@ export default function SettingsPage() {
       <ProfileCard me={me} onSaved={() => qc.invalidateQueries({ queryKey: ["me"] })} />
       <PasswordCard />
       <BanksCard banks={banks} onChanged={() => { qc.invalidateQueries({ queryKey: ["institutions"] }); qc.invalidateQueries({ queryKey: ["transactions"] }); qc.invalidateQueries({ queryKey: ["dashboard"] }); }} />
+      <DangerCard />
     </div>
+  );
+}
+
+function DangerCard() {
+  const qc = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const count = useQuery({ queryKey: ["txn-count"], queryFn: () => api<any>("/transactions?pageSize=1") });
+  const total = count.data?.total ?? 0;
+
+  const reset = useMutation({
+    mutationFn: () => api<{ deleted: number }>("/transactions/reset", { method: "POST", body: JSON.stringify({}) }),
+    onSuccess: () => {
+      ["txns", "transactions", "pnl", "uncat", "dashboard", "recent", "bs", "trend", "txn-count", "is", "bs-page"].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      setConfirming(false);
+    },
+  });
+
+  return (
+    <Card className="border-red-300 dark:border-red-900">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-red-600">Danger zone</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">Reset transactions</p>
+          <p className="text-xs text-gray-500">Permanently delete all {total} transaction(s) (and their splits). Categories, accounts, and rules are kept. This can’t be undone.</p>
+        </div>
+        {!confirming ? (
+          <Button variant="outline" className="text-red-600" onClick={() => setConfirming(true)} disabled={total === 0}>Reset transactions</Button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={() => setConfirming(false)} disabled={reset.isPending}>Cancel</Button>
+            <button onClick={() => reset.mutate()} disabled={reset.isPending} className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+              {reset.isPending ? "Deleting…" : `Delete all ${total}`}
+            </button>
+          </div>
+        )}
+      </div>
+      {reset.isSuccess && <p className="mt-2 text-sm text-green-600">Deleted {reset.data.deleted} transaction(s).</p>}
+      {reset.error && <p className="mt-2 text-sm text-red-600">{(reset.error as any).message}</p>}
+    </Card>
   );
 }
 
