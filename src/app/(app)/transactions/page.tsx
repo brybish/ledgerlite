@@ -7,6 +7,7 @@ import { SplitEditor } from "@/components/SplitEditor";
 import { AddTransactionModal } from "@/components/AddTransactionModal";
 import { CsvImportModal } from "@/components/CsvImportModal";
 import { AiClassifyModal } from "@/components/AiClassifyModal";
+import { TransactionEditModal } from "@/components/TransactionEditModal";
 
 // Transaction management: server-side filter/sort/pagination via /transactions.
 // Supports single inline categorize, multi-select bulk categorize, and per-row
@@ -19,6 +20,7 @@ export default function TransactionsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCat, setBulkCat] = useState("");
   const [splitTxn, setSplitTxn] = useState<any | null>(null);
+  const [editTxn, setEditTxn] = useState<any | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showAi, setShowAi] = useState(false);
@@ -130,6 +132,12 @@ export default function TransactionsPage() {
                 <td className="px-4 py-2.5">
                   <p className="font-medium">{t.merchantName ?? t.description}</p>
                   {t.pending && <span className="text-xs text-amber-600">pending</span>}
+                  {(!t.isBusiness || t.notes) && (
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                      {!t.isBusiness && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:bg-gray-800">Personal</span>}
+                      {t.notes && <span className="text-xs text-gray-400" title={t.notes}>📝 {t.notes.length > 40 ? t.notes.slice(0, 40) + "…" : t.notes}</span>}
+                    </div>
+                  )}
                   {t.isSplit && t.splits?.length > 0 && (
                     <div className="mt-1 space-y-0.5">
                       {t.splits.map((s: any) => (
@@ -153,7 +161,8 @@ export default function TransactionsPage() {
                   )}
                 </td>
                 <td className={`px-4 py-2.5 text-right font-medium ${t.amount >= 0 ? "text-emerald-600" : ""}`}>{fmtUSD(t.amount)}</td>
-                <td className="px-4 py-2.5 text-right">
+                <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                  <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => setEditTxn(t)}>Edit</Button>
                   <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => setSplitTxn(t)}>{t.isSplit ? "Edit split" : "Split"}</Button>
                 </td>
               </tr>
@@ -179,6 +188,7 @@ export default function TransactionsPage() {
       {showAdd && <AddTransactionModal categories={categories} onClose={() => setShowAdd(false)} />}
       {showImport && <CsvImportModal onClose={() => setShowImport(false)} />}
       {showAi && <AiClassifyModal categories={categories} onClose={() => setShowAi(false)} />}
+      {editTxn && <TransactionEditModal txn={editTxn} onClose={() => setEditTxn(null)} />}
     </div>
   );
 }
