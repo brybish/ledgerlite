@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, fmtUSD } from "@/lib/client";
 import { Card, Input, Button, Select, Skeleton } from "@/components/ui";
 import { SplitEditor } from "@/components/SplitEditor";
+import { AddTransactionModal } from "@/components/AddTransactionModal";
+import { CsvImportModal } from "@/components/CsvImportModal";
 
 // Transaction management: server-side filter/sort/pagination via /transactions.
 // Supports single inline categorize, multi-select bulk categorize, and per-row
@@ -16,6 +18,8 @@ export default function TransactionsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCat, setBulkCat] = useState("");
   const [splitTxn, setSplitTxn] = useState<any | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const params = new URLSearchParams({ pageSize: "50", page: String(page), sort: "date", dir: "desc" });
   if (q) params.set("q", q);
@@ -71,7 +75,13 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-semibold">Transactions</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Transactions</h1>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowImport(true)}>Import CSV</Button>
+          <Button onClick={() => setShowAdd(true)}>Add transaction</Button>
+        </div>
+      </div>
 
       <Card className="flex flex-wrap items-center gap-3">
         <Input placeholder="Search description or merchant…" value={q} onChange={(e: any) => { setQ(e.target.value); setPage(1); }} className="max-w-xs" />
@@ -163,6 +173,8 @@ export default function TransactionsPage() {
       )}
 
       {splitTxn && <SplitEditor txn={splitTxn} categories={categories} onClose={() => setSplitTxn(null)} />}
+      {showAdd && <AddTransactionModal categories={categories} onClose={() => setShowAdd(false)} />}
+      {showImport && <CsvImportModal onClose={() => setShowImport(false)} />}
     </div>
   );
 }

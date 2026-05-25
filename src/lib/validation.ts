@@ -25,6 +25,35 @@ export const txnUpdateSchema = z.object({
     .optional(),
 });
 
+// Manual transaction entry. `amount` is SIGNED cents (positive = money in,
+// negative = money out) — the client converts dollars + an in/out toggle before
+// sending. bankAccountId/plaidTransactionId stay null for non-Plaid rows.
+export const txnCreateSchema = z.object({
+  date: z.string().datetime(),
+  description: z.string().min(1).max(500),
+  amount: z.number().int(),
+  categoryId: z.string().cuid().nullable().optional(),
+  merchantName: z.string().max(200).optional(),
+  notes: z.string().max(2000).optional(),
+  isBusiness: z.boolean().default(true),
+});
+
+// Bulk CSV import. Each row already normalized to signed cents on the client.
+export const txnImportSchema = z.object({
+  source: z.string().max(120).optional(),
+  rows: z
+    .array(
+      z.object({
+        date: z.string().datetime(),
+        description: z.string().min(1).max(500),
+        amount: z.number().int(),
+        merchantName: z.string().max(200).optional(),
+      })
+    )
+    .min(1, "No rows to import.")
+    .max(5000, "Import is capped at 5000 rows at a time."),
+});
+
 export const ruleSchema = z.object({
   name: z.string().min(1).max(120),
   field: z.enum(["MERCHANT", "DESCRIPTION", "AMOUNT"]),

@@ -1,8 +1,10 @@
 import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { requireUser } from "@/lib/auth";
-import { ok, handleError } from "@/lib/api";
+import { ok, handleError, audit } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
+import { txnCreateSchema } from "@/lib/validation";
+import { applyRulesToUncategorized } from "@/server/accounting/rules-engine";
 
 // GET /api/transactions
 // Query params (all optional):
@@ -68,6 +70,34 @@ export async function GET(req: NextRequest) {
     ]);
 
     return ok({ items, total, page, pageSize, pages: Math.ceil(total / pageSize) });
+  } catch (err) {
+    return handleError(err);
+  }
+}
+
+// POST /api/transactions — create one transaction by hand (no bank link).
+// type is derived from the sign; if no category is given, run the rules engine.
+export async function POST(req: NextRequest) {
+  try {
+    const u = await requireUser(req);
+    const b = txnCreateSchema.parse(await req.json());
+    const txn = await prisma.transaction.create({
+      data: {
+        userId: u.id,
+        date: new Date(b.date),
+        description: b.description,
+        merchantName: b.merchantName ?? null,
+        amount: b.amount,
+        type: b.amount < 0 ? "DEBIT" : "CREDIT",
+        categoryId: b.categoryId ?? null,
+        isBusiness: b.isBusiness,
+        notes: b.notes ?? null,
+        institutionName: "Manual entry",
+      },
+    });
+    const rulesApplied = b.categoryId ? 0 : await applyRulesToUncategorized(u.id);
+    await audit(u.id, "transaction.create", "transactions", txn.id);
+    return ok({ transaction: txn, rulesApplied });
   } catch (err) {
     return handleError(err);
   }
