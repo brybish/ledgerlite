@@ -52,7 +52,10 @@ on architecture, conventions, and what's done vs. pending. Read before editing.
 - Income Statement period controls: current-year default + Year/Month dropdowns
 - No-Plaid data entry: manual "Add transaction" form + CSV import (column mapping,
   sign convention, (date,amount,description) dedup, auto rule application)
-- Custom categories: Categories page to add chart-of-accounts entries (name + class)
+- Custom categories: Categories page to add chart-of-accounts entries (name + class),
+  one-level subcategories (Category.parentId self-relation), and delete of
+  user-created categories (system protected; reverts their txns to uncategorized)
+- Reset transactions: Settings "Danger zone" hard-deletes all of a user's txns
 - AI categorize: /api/transactions/ai-classify suggests a category per uncategorized
   txn (Claude via forced tool-use, prompt-cached; review/accept modal). Needs
   ANTHROPIC_API_KEY; ANTHROPIC_MODEL defaults to claude-opus-4-7 (set to
