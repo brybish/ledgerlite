@@ -1,0 +1,334 @@
+// ===========================================================================
+// LedgerLite — Prisma schema
+// ---------------------------------------------------------------------------
+// Design notes:
+//  - Money is stored as INTEGER CENTS (Int) everywhere, never Float. Floating
+//    point + accounting = rounding bugs. We convert to/from decimals only at
+//    the UI/serialization boundary (see src/lib/money.ts).
+//  - Soft deletes via `deletedAt` on user-mutable financial records so that
+//    historical statements remain reproducible and we keep an audit trail.
+//  - Every tenant-owned row carries userId for row-level isolation. (Multi-user
+//    is enforced in the query layer; a future hardening step is Postgres RLS.)
+//  - Chart-of-accounts categories are seeded per-user so users can customize,
+//    while a `system` flag protects the canonical accounting categories.
+// ===========================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth / tenancy
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  OWNER
+  ACCOUNTANT
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         UserRole @default(OWNER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  institutions  Institution[]
+  bankAccounts  BankAccount[]
+  transactions  Transaction[]
+  categories    Category[]
+  rules         CategorizationRule[]
+  assets        Asset[]
+  liabilities   Liability[]
+  snapshots     BalanceSheetSnapshot[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Banking (Plaid)
+// ---------------------------------------------------------------------------
+
+model Institution {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  plaidItemId     String   @unique
+  // AES-256-GCM encrypted Plaid access token. We NEVER store raw bank creds.
+  accessTokenEnc  String
+  // Plaid transactions-sync cursor for incremental, dedup-safe pulls.
+  syncCursor      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  bankAccounts BankAccount[]
+
+  @@index([userId])
+  @@map("institutions")
+}
+
+enum AccountType {
+  DEPOSITORY
+  CREDIT
+  LOAN
+  INVESTMENT
+  OTHER
+}
+
+model BankAccount {
+  id              String       @id @default(cuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institutionId   String
+  institution     Institution  @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  plaidAccountId  String       @unique
+  name            String
+  mask            String?
+  type            AccountType  @default(DEPOSITORY)
+  subtype         String?
+  // Latest known balance from Plaid, in cents.
+  currentBalance  Int          @default(0)
+  availableBalance Int?
+  isoCurrency     String       @default("USD")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
+
+  transactions Transaction[]
+
+  @@index([userId])
+  @@index([institutionId])
+  @@map("bank_accounts")
+}
+
+// ---------------------------------------------------------------------------
+// Chart of accounts
+// ---------------------------------------------------------------------------
+// Five top-level statement classes drive ALL reporting:
+//   ASSET, LIABILITY, EQUITY  -> Balance Sheet
+//   REVENUE, EXPENSE          -> Income Statement
+// Net income (Revenue - Expense) flows into Equity as Retained Earnings.
+
+enum AccountClass {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+model Category {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  class     AccountClass
+  // `system` categories are the canonical accounting categories seeded for
+  // every user and cannot be deleted (only hidden).
+  system    Boolean      @default(false)
+  // Optional sub-grouping, e.g. CURRENT vs LONG_TERM for liabilities.
+  subgroup  String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
+
+  transactions Transaction[]
+  splits       TransactionSplit[]
+  rules        CategorizationRule[]
+
+  @@unique([userId, name])
+  @@index([userId, class])
+  @@map("transaction_categories")
+}
+
+// ---------------------------------------------------------------------------
+// Transactions
+// ---------------------------------------------------------------------------
+
+enum TxnType {
+  DEBIT // money leaving the account (typically an expense)
+  CREDIT // money entering the account (typically income)
+}
+
+model Transaction {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankAccountId   String?
+  bankAccount     BankAccount?  @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+
+  // Plaid's stable id. Unique-per-user index is the duplicate-import guard.
+  plaidTransactionId String?
+  date            DateTime
+  description     String
+  merchantName    String?
+  // Signed amount in CENTS. Convention: positive = money IN (credit),
+  // negative = money OUT (debit). We normalize Plaid's sign on import.
+  amount          Int
+  type            TxnType
+  pending         Boolean       @default(false)
+  accountName     String?
+  institutionName String?
+  categoryFromBank String?
+
+  categoryId      String?
+  category        Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  isBusiness      Boolean       @default(true)
+  notes           String?
+  // When a transaction is split, the sum of splits must equal `amount` and
+  // `categoryId` is ignored in favor of the splits (see accounting engine).
+  isSplit         Boolean       @default(false)
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+
+  splits TransactionSplit[]
+
+  @@unique([userId, plaidTransactionId])
+  @@index([userId, date])
+  @@index([userId, categoryId])
+  @@index([bankAccountId])
+  @@map("transactions")
+}
+
+model TransactionSplit {
+  id            String      @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      Category    @relation(fields: [categoryId], references: [id])
+  amount        Int // cents, same sign convention as parent
+  notes         String?
+  createdAt     DateTime    @default(now())
+
+  @@index([transactionId])
+  @@map("transaction_splits")
+}
+
+// ---------------------------------------------------------------------------
+// Rules engine
+// ---------------------------------------------------------------------------
+
+enum RuleField {
+  MERCHANT
+  DESCRIPTION
+  AMOUNT
+}
+
+enum RuleOp {
+  CONTAINS
+  EQUALS
+  STARTS_WITH
+  GT
+  LT
+}
+
+model CategorizationRule {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  field      RuleField
+  op         RuleOp
+  value      String // compared as text; for AMOUNT it's parsed to cents
+  categoryId String
+  category   Category  @relation(fields: [categoryId], references: [id])
+  // Lower priority number = evaluated first; first match wins.
+  priority   Int       @default(100)
+  enabled    Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  @@index([userId, priority])
+  @@map("categorization_rules")
+}
+
+// ---------------------------------------------------------------------------
+// Manual balance-sheet items
+// ---------------------------------------------------------------------------
+
+model Asset {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name             String
+  type             String // e.g. Equipment, Vehicles, Real Estate
+  value            Int // current book value in cents
+  acquisitionDate  DateTime?
+  // Basic straight-line depreciation inputs (optional).
+  depreciable      Boolean   @default(false)
+  usefulLifeMonths Int?
+  salvageValue     Int       @default(0)
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  @@index([userId])
+  @@map("assets")
+}
+
+model Liability {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  type          String // e.g. Loans Payable, Credit Cards, Mortgage
+  balance       Int // outstanding balance in cents
+  longTerm      Boolean   @default(false) // current vs long-term
+  interestRate  Float?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  @@index([userId])
+  @@map("liabilities")
+}
+
+// Immutable point-in-time snapshot for historical balance sheets.
+model BalanceSheetSnapshot {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asOf      DateTime
+  // Full computed statement stored as JSON for reproducibility.
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, asOf])
+  @@map("balance_sheet_snapshots")
+}
+
+// ---------------------------------------------------------------------------
+// Audit log
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String // e.g. "transaction.categorize", "auth.login"
+  entity    String? // table name
+  entityId  String?
+  metadata  Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
